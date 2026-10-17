@@ -17,14 +17,17 @@ interface AuthModalProps {
 export default function AuthModal({ isOpen = true, onSuccess }: AuthModalProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
@@ -39,16 +42,23 @@ export default function AuthModal({ isOpen = true, onSuccess }: AuthModalProps) 
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail,
-        password,
-      });
+      const { data, error } = isSignUp
+        ? await supabase.auth.signUp({
+            email: trimmedEmail,
+            password,
+          })
+        : await supabase.auth.signInWithPassword({
+            email: trimmedEmail,
+            password,
+          });
 
       if (error) {
         throw error;
       }
 
-      if (data.session || data.user) {
+      if (isSignUp && data.user && !data.session) {
+        setSuccessMessage('Account created. Check your email to confirm the account, then sign in.');
+      } else if (data.session || data.user) {
         onSuccess?.();
       }
     } catch (err: any) {
@@ -144,11 +154,30 @@ export default function AuthModal({ isOpen = true, onSuccess }: AuthModalProps) 
             ) : (
               <>
                 <UserCheck className="w-4 h-4" />
-                <span>Sign In to Workspace</span>
+                <span>{isSignUp ? 'Create Account' : 'Sign In to Workspace'}</span>
               </>
             )}
           </button>
         </form>
+        {successMessage && (
+          <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-3 text-xs text-emerald-300" role="status">
+            {successMessage}
+          </div>
+        )}
+        <div className="mt-5 text-center text-xs text-slate-400">
+          {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+          <button
+            type="button"
+            onClick={() => {
+              setIsSignUp((current) => !current);
+              setErrorMessage(null);
+              setSuccessMessage(null);
+            }}
+            className="font-medium text-cyan-400 hover:text-cyan-300"
+          >
+            {isSignUp ? 'Sign in' : 'Create one'}
+          </button>
+        </div>
       </div>
     </div>
   );

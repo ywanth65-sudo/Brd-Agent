@@ -32,6 +32,19 @@ def clean_schema_for_gemini(schema: dict) -> dict:
     return copy.deepcopy(schema)
 
 
+def _compact_schema_for_prompt(value: Any) -> Any:
+    """Remove prose metadata from schemas to leave more context for source content."""
+    if isinstance(value, dict):
+        return {
+            key: _compact_schema_for_prompt(item)
+            for key, item in value.items()
+            if key not in {"description", "title", "default"}
+        }
+    if isinstance(value, list):
+        return [_compact_schema_for_prompt(item) for item in value]
+    return value
+
+
 class LLMClient:
     """LLM client generating structured Pydantic responses using the Groq API."""
 
@@ -91,9 +104,15 @@ class LLMClient:
                     messages=messages,
                     response_format={"type": "json_object"},
                     temperature=0.3,
-                    max_tokens=4096,
+                    max_tokens=2048,
                 )
             except (RateLimitError, APIConnectionError, APIError) as api_err:
+                error_text = str(api_err).lower()
+                if "request too large" in error_text or "413" in error_text:
+                    raise RuntimeError(
+                        "The AI analysis request is too large for the configured Groq model. "
+                        "Reduce the uploaded document content or run analysis on fewer source documents."
+                    ) from api_err
                 # If model is not found, dynamically find an available chat model on this key
                 if "model_not_found" in str(api_err):
                     try:
@@ -159,7 +178,10 @@ class LLMClient:
         Raises:
             RuntimeError: If the model output fails schema validation even after a correction retry.
         """
-        schema_json_str = json.dumps(response_schema.model_json_schema(), indent=2)
+        schema_json_str = json.dumps(
+            _compact_schema_for_prompt(response_schema.model_json_schema()),
+            separators=(",", ":"),
+        )
         user_prompt_with_schema = (
             f"{prompt}\n\n"
             f"EXPECTED JSON SCHEMA:\n"

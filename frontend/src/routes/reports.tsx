@@ -18,7 +18,7 @@ export const Route = createFileRoute("/reports")({
 });
 
 function Page() {
-  const { downloadDocx, isGeneratingBRD, requirements, activeProject } = useApp();
+  const { downloadDocx, isGeneratingBRD, requirements, activeProject, brdVersion } = useApp();
 
   return (
     <div className="space-y-4">
@@ -34,7 +34,8 @@ function Page() {
           </button>
           <button
             onClick={() => downloadDocx()}
-            disabled={isGeneratingBRD}
+            disabled={isGeneratingBRD || !brdVersion}
+            title={!brdVersion ? "Generate the BRD before downloading a Word document" : "Download the generated BRD"}
             className="flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50"
           >
             <Download className="h-3.5 w-3.5" />

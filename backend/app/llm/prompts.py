@@ -13,6 +13,13 @@ from app.models.requirement import Requirement
 from app.models.validation import ValidationIssue
 
 
+def _limit_prompt_text(value: str, limit: int, label: str) -> str:
+    """Keep provider requests within the model context window without hiding truncation."""
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}\n\n[{label} truncated to fit the model context window]"
+
+
 def build_extraction_prompt(
     idea_text: Optional[str] = None,
     existing_requirements: Optional[list[Requirement]] = None,
@@ -50,9 +57,17 @@ def build_extraction_prompt(
             }
             for req in existing_requirements
         ]
-        existing_str = json.dumps(existing_data, indent=2)
+        existing_str = _limit_prompt_text(
+            json.dumps(existing_data, indent=2),
+            6000,
+            "Previously extracted requirements",
+        )
 
-    answered_str = answered_context.strip() if answered_context else "None"
+    answered_str = (
+        _limit_prompt_text(answered_context.strip(), 4000, "Resolved clarification answers")
+        if answered_context
+        else "None"
+    )
 
     # Format source document chunks if available
     chunks_formatted: list[str] = []
@@ -64,9 +79,17 @@ def build_extraction_prompt(
             chunks_formatted.append(
                 f"[CHUNK_ID: {c.id} | {doc_label} | {page_label}{section_label}]\n{c.text.strip()}"
             )
-    chunks_str = "\n\n".join(chunks_formatted) if chunks_formatted else "None"
+    chunks_str = (
+        _limit_prompt_text("\n\n".join(chunks_formatted), 10000, "Source document chunks")
+        if chunks_formatted
+        else "None"
+    )
 
-    idea_str = idea_text.strip() if idea_text and idea_text.strip() else "None provided (derive requirements primarily from source document chunks)."
+    idea_str = (
+        _limit_prompt_text(idea_text.strip(), 4000, "Business idea")
+        if idea_text and idea_text.strip()
+        else "None provided (derive requirements primarily from source document chunks)."
+    )
 
     return f"""You are a Principal Business Systems Analyst. Your goal is to synthesize raw business ideas and source document chunks into structured requirement specifications and explicit assumptions for a formal Business Requirements Document (BRD).
 

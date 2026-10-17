@@ -81,7 +81,7 @@ function Page() {
                 key={p.id}
                 onClick={() => {
                   setActiveProjectId(p.id);
-                  navigate({ to: "/" });
+                  navigate({ to: "/workspace" });
                 }}
                 className={`flex items-center justify-between p-4 cursor-pointer transition-colors hover:bg-muted/60 ${
                   isActive ? "bg-accent/40" : ""

@@ -11,7 +11,7 @@ import ShareProjectModal from "@/components/ShareProjectModal";
 import ClarificationChatDrawer from "@/components/ClarificationChatDrawer";
 
 const nav = [
-  ["Dashboard", LayoutDashboard, "/"],
+  ["Dashboard", LayoutDashboard, "/workspace"],
   ["Projects", FolderKanban, "/projects"],
   ["Documents", FileText, "/documents"],
   ["BRD Analysis", BrainCircuit, "/analysis"],
@@ -64,7 +64,7 @@ function Sidebar({
 
       <nav className="mt-2 flex-1 space-y-1 px-2.5">
         {nav.map(([label, Icon, to]) => {
-          const on = active === to;
+          const on = active === to || active.startsWith(`${to}/`);
           return (
             <Link
               key={label}
@@ -138,7 +138,7 @@ function Header({
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-card px-4 lg:px-6">
-      <button onClick={onMenu} className="lg:hidden text-foreground">
+      <button onClick={onMenu} aria-label="Open navigation menu" className="lg:hidden text-foreground">
         <Menu className="h-5 w-5" />
       </button>
 
@@ -241,7 +241,7 @@ function Header({
 
         {/* Notifications (Open Clarification Questions count) */}
         <div className="relative">
-          <button onClick={() => toggle("n")} className="relative rounded-md p-1.5 hover:bg-muted text-foreground">
+          <button onClick={() => toggle("n")} aria-label={`Open clarifications and alerts${questions.length ? ` (${questions.length})` : ""}`} className="relative rounded-md p-1.5 hover:bg-muted text-foreground">
             <Bell className="h-5 w-5 text-muted-foreground" />
             {questions.length > 0 && (
               <span className="absolute -right-0.5 -top-0.5 grid h-4 w-4 place-items-center rounded-full bg-primary text-[9px] font-semibold text-primary-foreground">
@@ -280,7 +280,7 @@ function Header({
         {/* User Account / Auth */}
         {user ? (
           <div className="relative">
-            <button onClick={() => toggle("u")} className="flex items-center gap-2.5">
+            <button onClick={() => toggle("u")} aria-label="Open account menu" className="flex items-center gap-2.5">
               <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/20 text-primary text-[13px] font-semibold">
                 {userInitials}
               </span>
@@ -349,6 +349,7 @@ function Header({
 
 const titles: Record<string, string> = {
   ...Object.fromEntries(nav.map(([l, , t]) => [t, l])),
+  "/workspace": "Dashboard",
   "/profile": "Profile",
   "/support": "Support",
 };
@@ -370,7 +371,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   if (path === "/login") return <>{children}</>;
 
-  const pageTitle = path === "/" ? (activeProject?.title ?? "Dashboard") : (titles[path] ?? "Page");
+  const pageTitle = path === "/workspace" ? (activeProject?.title ?? "Dashboard") : (titles[path] ?? "Page");
 
   return (
     <div className="flex min-h-screen w-full bg-background text-foreground">

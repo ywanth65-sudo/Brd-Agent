@@ -53,7 +53,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 const STORAGE_ACTIVE_PROJECT_KEY = 'brd_agent_active_project_id';
-const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== 'false';
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // ─── Auth State ───────────────────────────────────────────────────────────
@@ -248,6 +248,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const triggerAnalyze = useCallback(async () => {
     if (!activeProjectId) return;
+    if (activeProject && !['DRAFT', 'ANALYZING', 'AWAITING_CLARIFICATION', 'GENERATED'].includes(activeProject.status)) {
+      toast.info(`Analysis is unavailable while this project is ${activeProject.status.replaceAll('_', ' ')}.`);
+      return;
+    }
     setIsAnalyzing(true);
     toast.info('Running AI analysis & verification loop...');
     try {
@@ -263,7 +267,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setIsAnalyzing(false);
     }
-  }, [activeProjectId, refreshActiveProject, refreshProjects]);
+  }, [activeProject, activeProjectId, refreshActiveProject, refreshProjects]);
 
   const submitQuestionAnswers = useCallback(
     async (answers: { question_id: string; value: string }[]) => {
@@ -317,6 +321,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const downloadDocx = useCallback(async () => {
     if (!activeProjectId) return;
+    if (!brdVersion) {
+      toast.info('Generate the BRD before downloading a Word document.');
+      return;
+    }
     toast.info('Preparing BRD document download...');
     try {
       const filename = activeProject
@@ -327,7 +335,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err: any) {
       toast.error(err.message || 'Failed to download document');
     }
-  }, [activeProjectId, activeProject]);
+  }, [activeProjectId, activeProject, brdVersion]);
 
   return (
     <AppContext.Provider

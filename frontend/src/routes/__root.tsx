@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -82,12 +83,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootContent() {
   const { showAuthModal, setShowAuthModal } = useApp();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   return (
     <>
-      <Shell>
-        <Outlet />
-      </Shell>
+      {pathname === "/" ? <Outlet /> : <Shell><Outlet /></Shell>}
       <Toaster position="top-right" />
       {showAuthModal && (
         <AuthModal

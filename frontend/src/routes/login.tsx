@@ -21,10 +21,10 @@ function Login() {
   const { isAuthenticated, user, signOut } = useApp();
   const navigate = useNavigate();
 
-  if (!isAuthenticated) {
+  if (!user) {
     return (
       <div className="relative min-h-screen bg-slate-950">
-        <AuthModal isOpen={true} onSuccess={() => navigate({ to: "/" })} />
+        <AuthModal isOpen={true} onSuccess={() => navigate({ to: "/workspace" })} />
       </div>
     );
   }
