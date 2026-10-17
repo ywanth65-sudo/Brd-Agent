@@ -53,6 +53,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 const STORAGE_ACTIVE_PROJECT_KEY = 'brd_agent_active_project_id';
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== 'false';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // ─── Auth State ───────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingBRD, setIsGeneratingBRD] = useState(false);
 
-  const isAuthenticated = !!user;
+  const isAuthenticated = DEMO_MODE || !!user;
 
   // Active project entity lookup
   const activeProject = useMemo(() => {
@@ -91,6 +92,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ─── Supabase Auth Listener ───────────────────────────────────────────────
   useEffect(() => {
+    if (DEMO_MODE) {
+      setIsAuthLoading(false);
+      setShowAuthModal(false);
+      return;
+    }
+
     let mounted = true;
 
     supabase.auth.getSession().then(({ data }) => {
@@ -121,6 +128,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const signOut = useCallback(async () => {
+    if (DEMO_MODE) {
+      toast.info('Authentication is disabled in demo mode');
+      return;
+    }
+
     try {
       await supabase.auth.signOut();
       setUser(null);

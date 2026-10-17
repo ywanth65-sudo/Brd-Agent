@@ -39,7 +39,7 @@ from app.api.schemas_api import (
     UserProfileUpdateRequest,
 )
 from app.core.brd_generator import BRDGenerator
-from app.core.document_parser import DocumentParser
+from app.core.document_parser import DocumentParser, ParsedChunk, ParsedDocument
 from app.core.docx_renderer import render_brd_to_docx
 from app.core.merge import merge_answers_into_requirements
 from app.core.orchestrator import BRDOrchestrator
@@ -159,7 +159,7 @@ def create_project(
         project = repository.create_project(
             title=title,
             idea=request.idea,
-            owner_id=current_user.user_id,
+            owner_id=None if current_user.is_demo else current_user.user_id,
             owner_email=current_user.email,
         )
         return CreateProjectResponse(project=project)
@@ -179,7 +179,10 @@ def list_projects(
 ) -> list[Project]:
     """Retrieve recent projects owned by the authenticated user ordered by creation date descending."""
     try:
-        return repository.list_projects(limit=limit, owner_id=current_user.user_id)
+        return repository.list_projects(
+            limit=limit,
+            owner_id=None if current_user.is_demo else current_user.user_id,
+        )
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
 
@@ -378,7 +381,32 @@ async def upload_source(
     suffix = Path(filename).suffix.lower().lstrip(".")
     try:
         if suffix in {"png", "jpg", "jpeg", "webp"}:
-            parsed_doc = parser.parse_image(filename, content_bytes, llm_client)
+            if current_user.is_demo:
+                parser.detect_and_validate_format(filename, content_bytes)
+                parsed_doc = ParsedDocument(
+                    filename=filename,
+                    file_type="image",
+                    raw_text=(
+                        f"Image source uploaded: {filename}. "
+                        "Vision transcription is unavailable in demo mode until "
+                        "GROQ_API_KEY is configured."
+                    ),
+                    chunks=[
+                        ParsedChunk(
+                            chunk_index=0,
+                            content=(
+                                f"Image source uploaded: {filename}. "
+                                "Vision transcription is unavailable in demo mode "
+                                "until GROQ_API_KEY is configured."
+                            ),
+                            page_number=1,
+                            metadata={"file_type": "image", "mime_type": file.content_type or ""},
+                        )
+                    ],
+                    total_pages=1,
+                )
+            else:
+                parsed_doc = parser.parse_image(filename, content_bytes, llm_client)
         else:
             parsed_doc = parser.parse_file(filename, content_bytes)
     except ValueError as err:
@@ -388,6 +416,11 @@ async def upload_source(
         )
     except Exception as err:
         logger.error("Unexpected error parsing file '%s': %s", filename, err)
+        if "GROQ_API_KEY" in str(err) or "Groq" in str(err):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=str(err),
+            ) from err
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to parse document: {err}",
@@ -406,7 +439,7 @@ async def upload_source(
         error_message=None,
         file_size_bytes=len(content_bytes),
         created_at=now.isoformat(),
-        uploaded_by=current_user.user_id,
+        uploaded_by=None if current_user.is_demo else current_user.user_id,
         uploader_email=current_user.email,
     )
 
@@ -620,10 +653,14 @@ def analyze_project(
         raise
     except Exception as err:
         err_msg = str(err)
-        if "gemini" in str(type(err)).lower() or "google" in str(type(err)).lower():
+        if (
+            "GROQ_API_KEY" in err_msg
+            or "Groq" in err_msg
+            or "groq" in str(type(err)).lower()
+        ):
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Gemini API failure during analysis: {err_msg}",
+                detail=f"Groq API failure during analysis: {err_msg}",
             )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
 
@@ -1456,6 +1493,7 @@ def get_latest_brd(
 def download_brd_docx(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Response:
     """Export and stream the latest BRD version formatted as a clean Microsoft Word document."""
     try:
@@ -1465,9 +1503,54 @@ def download_brd_docx(
 
     latest_version = repository.get_latest_brd_version(project_id)
     if not latest_version:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No generated BRD version exists for project '{project_id}'.",
+        preview_requirements = repository.get_requirements(project_id)
+        preview_sources = repository.get_source_documents_by_project(project_id)
+        if not current_user.is_demo or not preview_requirements and not preview_sources:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No generated BRD version exists for project '{project_id}'.",
+            )
+
+        # Demo mode should remain browsable even when AI generation has not run.
+        # Build a preview from the currently persisted project data.
+        preview_version = 1
+        preview_content = {
+            "title": project.title,
+            "version": preview_version,
+            "input_revision": project.input_revision,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "quality_check_passed": False,
+            "quality_report": {
+                "total_requirements": len(preview_requirements),
+                "grounded_count": 0,
+                "ungrounded_count": 0,
+                "ungrounded_requirement_ids": [],
+            },
+            "executive_summary": project.idea,
+            "project_objectives": [project.idea],
+            "scope": {"in_scope": [], "out_of_scope": []},
+            "stakeholders_and_personas": [],
+            "functional_requirements": [],
+            "nonfunctional_requirements": [],
+            "constraints": [],
+            "assumptions": [],
+            "dependencies": [],
+            "traceability_matrix": [],
+            "business_requirements": [],
+            "open_questions": [],
+            "source_documents": [
+                {"id": source.id, "filename": source.filename, "file_type": source.file_type}
+                for source in preview_sources
+            ],
+            "traceability_note": "Demo preview generated from the current project workspace.",
+        }
+        docx_bytes = render_brd_to_docx(preview_content)
+        clean_title = project.title.replace(" ", "_")
+        filename = f"BRD_{clean_title}_preview.docx"
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     docx_bytes = latest_version.docx_bytes

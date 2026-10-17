@@ -21,11 +21,13 @@ class AuthenticatedUser:
 
     user_id: str
     email: Optional[str] = None
+    is_demo: bool = False
 
 
 DEFAULT_DEV_USER = AuthenticatedUser(
     user_id="dev-user-000",
     email="dev@example.com",
+    is_demo=True,
 )
 
 

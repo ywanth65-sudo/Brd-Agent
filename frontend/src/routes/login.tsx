@@ -37,7 +37,10 @@ function Login() {
         </div>
         <h1 className="text-[18px] font-bold text-foreground">BRD AGENT</h1>
         <p className="mt-1 text-[12px] text-muted-foreground">
-          Currently signed in as <span className="font-medium text-foreground">{user?.email}</span>
+          Currently signed in as{" "}
+          <span className="font-medium text-foreground">
+            {user?.email || "Guest User (demo mode)"}
+          </span>
         </p>
 
         <div className="mt-6 flex flex-col gap-2.5">

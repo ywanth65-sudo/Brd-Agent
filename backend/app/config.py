@@ -29,7 +29,15 @@ GROQ_VISION_MODEL: str = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
 
 if not GROQ_API_KEY or GROQ_API_KEY in ("your_groq_key_here", "your_groq_api_key_here"):
     logger.warning("WARNING: GROQ_API_KEY not configured. Extraction will require a valid key.")
-    GROQ_API_KEY = GROQ_API_KEY or "gsk_demo_placeholder_key"
+    GROQ_API_KEY = ""
+
+
+def has_valid_groq_api_key() -> bool:
+    """Return whether a non-placeholder Groq credential is configured."""
+    return bool(
+        GROQ_API_KEY
+        and GROQ_API_KEY not in ("your_groq_key_here", "your_groq_api_key_here")
+    )
 
 # Legacy Gemini settings (kept as unused legacy fields for reference)
 GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "")

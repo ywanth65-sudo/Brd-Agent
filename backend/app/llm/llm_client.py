@@ -50,6 +50,14 @@ class LLMClient:
         self.model_name = model_name or config.GROQ_MODEL
         self.client = Groq(api_key=self.api_key)
 
+    def _require_api_key(self) -> None:
+        """Fail before making network calls when local configuration is incomplete."""
+        if not self.api_key or self.api_key in ("your_groq_key_here", "your_groq_api_key_here"):
+            raise RuntimeError(
+                "GROQ_API_KEY is missing or still set to a placeholder. "
+                "Add a valid Groq API key to backend/.env and restart the backend."
+            )
+
     @staticmethod
     def _clean_json_text(text: str) -> str:
         """Strip markdown code fence wrappers (```json or ```) and surrounding whitespace."""
@@ -73,6 +81,7 @@ class LLMClient:
         Retries on RateLimitError, APIConnectionError, and APIError starting with a
         2-second delay and doubling up to 2 retries (3 total attempts).
         """
+        self._require_api_key()
         delay = initial_backoff_sec
 
         for attempt in range(max_retries + 1):
@@ -224,6 +233,7 @@ class LLMClient:
         Returns:
             Extracted detailed Markdown text transcription.
         """
+        self._require_api_key()
         b64_str = base64.b64encode(image_bytes).decode("utf-8")
         data_uri = f"data:{mime_type};base64,{b64_str}"
         prompt = (

@@ -2,11 +2,10 @@ import { useState, type FormEvent } from 'react';
 import {
   Lock,
   Mail,
-  UserCheck,
   AlertCircle,
   Loader2,
   ShieldCheck,
-  CheckCircle2,
+  UserCheck,
 } from 'lucide-react';
 import { supabase } from '../api/supabase';
 
@@ -16,20 +15,16 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ isOpen = true, onSuccess }: AuthModalProps) {
-  const [tab, setTab] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    setSuccessMessage(null);
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
@@ -42,43 +37,19 @@ export default function AuthModal({ isOpen = true, onSuccess }: AuthModalProps) 
       return;
     }
 
-    if (tab === 'signup' && password !== confirmPassword) {
-      setErrorMessage('Passwords do not match.');
-      return;
-    }
-
     setIsLoading(true);
     try {
-      if (tab === 'signin') {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: trimmedEmail,
-          password,
-        });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
 
-        if (error) {
-          throw error;
-        }
+      if (error) {
+        throw error;
+      }
 
-        if (data.session || data.user) {
-          onSuccess?.();
-        }
-      } else {
-        const { data, error } = await supabase.auth.signUp({
-          email: trimmedEmail,
-          password,
-        });
-
-        if (error) {
-          throw error;
-        }
-
-        if (data.session) {
-          onSuccess?.();
-        } else {
-          setSuccessMessage(
-            'Account created successfully! If email confirmation is required, please check your inbox.'
-          );
-        }
+      if (data.session || data.user) {
+        onSuccess?.();
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Authentication failed. Please check your credentials.');
@@ -113,55 +84,11 @@ export default function AuthModal({ isOpen = true, onSuccess }: AuthModalProps) 
           </p>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex p-1 mb-6 bg-slate-950/60 rounded-xl border border-slate-800/80">
-          <button
-            type="button"
-            id="tab-signin"
-            onClick={() => {
-              setTab('signin');
-              setErrorMessage(null);
-              setSuccessMessage(null);
-            }}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all duration-150 ${
-              tab === 'signin'
-                ? 'bg-slate-800 text-cyan-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            id="tab-signup"
-            onClick={() => {
-              setTab('signup');
-              setErrorMessage(null);
-              setSuccessMessage(null);
-            }}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all duration-150 ${
-              tab === 'signup'
-                ? 'bg-slate-800 text-cyan-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Create Account
-          </button>
-        </div>
-
         {/* Error Alert */}
         {errorMessage && (
           <div className="mb-4 flex items-start gap-2.5 p-3 rounded-lg bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs animate-shake">
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-400" />
             <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {/* Success Alert */}
-        {successMessage && (
-          <div className="mb-4 flex items-start gap-2.5 p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5 text-emerald-400" />
-            <span>{successMessage}</span>
           </div>
         )}
 
@@ -203,26 +130,6 @@ export default function AuthModal({ isOpen = true, onSuccess }: AuthModalProps) 
             </div>
           </div>
 
-          {tab === 'signup' && (
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  id="auth-confirm-password-input"
-                  type="password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-3 py-2.5 text-sm bg-slate-950/60 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors"
-                />
-              </div>
-            </div>
-          )}
-
           <button
             type="submit"
             id="auth-submit-btn"
@@ -232,12 +139,12 @@ export default function AuthModal({ isOpen = true, onSuccess }: AuthModalProps) 
             {isLoading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>{tab === 'signin' ? 'Signing In...' : 'Creating Account...'}</span>
+                <span>Signing In...</span>
               </>
             ) : (
               <>
                 <UserCheck className="w-4 h-4" />
-                <span>{tab === 'signin' ? 'Sign In to Workspace' : 'Create Free Account'}</span>
+                <span>Sign In to Workspace</span>
               </>
             )}
           </button>

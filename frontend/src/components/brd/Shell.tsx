@@ -113,7 +113,7 @@ function Header({
   onOpenCreate: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, signOut, setShowAuthModal, activeProject, projects, setActiveProjectId, questions } = useApp();
+  const { user, isAuthenticated, signOut, setShowAuthModal, activeProject, projects, setActiveProjectId, questions } = useApp();
   const [open, setOpen] = useState<"n" | "u" | "p" | null>(null);
   const toggle = (k: "n" | "u" | "p") => setOpen(open === k ? null : k);
 
@@ -292,7 +292,7 @@ function Header({
               </div>
             )}
           </div>
-        ) : (
+        ) : isAuthenticated ? null : (
           <button
             onClick={() => setShowAuthModal(true)}
             className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
