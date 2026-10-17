@@ -904,7 +904,11 @@ def clarification_chat(
         chunks = repository.get_source_chunks_by_project(project_id)
 
         # 2. Format sender identity for collaborative interview grounding
-        sender_prof = repository.get_profile(current_user.user_id) if hasattr(repository, "get_profile") else None
+        sender_prof = (
+            repository.get_profile(current_user.user_id)
+            if hasattr(repository, "get_profile") and not current_user.is_demo
+            else None
+        )
         sender_name = (sender_prof.get("full_name") if sender_prof else None) or current_user.email or "Stakeholder"
         role_title = (sender_prof.get("role_title") if sender_prof else None) or "Team Member"
         sender_prefixed_message = f"[Sender: {sender_name} ({role_title})]: {request.message}"

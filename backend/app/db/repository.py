@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import logging
 from typing import Any, Optional, Sequence, Union
 import uuid
+from uuid import UUID
 
 from supabase import Client
 
@@ -27,6 +28,17 @@ from app.models.requirement import Priority, Requirement, RequirementType
 from app.models.validation import Severity, ValidationIssue, ValidationResult
 
 logger = logging.getLogger(__name__)
+
+
+def _nullable_uuid(value: Optional[str]) -> Optional[str]:
+    """Keep development identities out of Postgres UUID columns."""
+    if not value:
+        return None
+    try:
+        UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return str(value)
 
 
 class ProjectRepository:
@@ -349,7 +361,7 @@ class ProjectRepository:
         row = {
             "id": str(uuid.uuid4()),
             "project_id": project_id,
-            "sender_id": sender_id,
+            "sender_id": _nullable_uuid(sender_id),
             "sender_email": sender_email,
             "sender_name": sender_name,
             "role": role,
@@ -909,7 +921,7 @@ class ProjectRepository:
                 "question_id": a.question_id,
                 "value": a.value,
                 "answered_at": (a.answered_at or datetime.now(timezone.utc)).isoformat(),
-                "answered_by": a.answered_by,
+                "answered_by": _nullable_uuid(a.answered_by),
                 "answerer_email": a.answerer_email,
             }
             for a in answers
@@ -1027,7 +1039,7 @@ class ProjectRepository:
         rev_dt = reviewed_at or datetime.now(timezone.utc)
         update_data: dict[str, Any] = {"status": status_val}
         if reviewed_by is not None:
-            update_data["reviewed_by"] = reviewed_by
+            update_data["reviewed_by"] = _nullable_uuid(reviewed_by)
         if reviewer_email is not None:
             update_data["reviewer_email"] = reviewer_email
         if rev_dt is not None:
@@ -1387,7 +1399,7 @@ class ProjectRepository:
             raise ValueError(f"Failed to get source chunks: {exc}") from exc
 
     def get_source_chunks_by_project(self, project_id: str) -> list[SourceChunk]:
-        """Fetch all chunks for an entire project ordered by created_at ASC, chunk_index ASC.
+        """Fetch all chunks for an entire project ordered by chunk index.
 
         Args:
             project_id: Project UUID string.
@@ -1399,23 +1411,13 @@ class ProjectRepository:
             ValueError: If database query fails.
         """
         try:
-            try:
-                res = (
-                    self.client.table("source_chunks")
-                    .select("*")
-                    .eq("project_id", project_id)
-                    .order("created_at", desc=False)
-                    .order("chunk_index", desc=False)
-                    .execute()
-                )
-            except Exception:
-                res = (
-                    self.client.table("source_chunks")
-                    .select("*")
-                    .eq("project_id", project_id)
-                    .order("chunk_index", desc=False)
-                    .execute()
-                )
+            res = (
+                self.client.table("source_chunks")
+                .select("*")
+                .eq("project_id", project_id)
+                .order("chunk_index", desc=False)
+                .execute()
+            )
             return [self._row_to_source_chunk(r) for r in (res.data or [])]
         except Exception as exc:
             logger.error("Failed to get chunks for project '%s': %s", project_id, exc)
