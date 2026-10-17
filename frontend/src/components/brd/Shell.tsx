@@ -3,10 +3,11 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, FileText, BrainCircuit, BadgeCheck, ListChecks, BarChart3,
   ClipboardList, Settings, HelpCircle, Bell, ChevronDown, ChevronRight, Menu, X, Hexagon, User, LogOut,
-  Plus, LogIn, Sparkles
+  Plus, LogIn, Sparkles, Users
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { CreateProjectModal } from "@/components/CreateProjectModal";
+import ShareProjectModal from "@/components/ShareProjectModal";
 
 const nav = [
   ["Dashboard", LayoutDashboard, "/"],
@@ -106,14 +107,26 @@ function Sidebar({
 function Header({
   onMenu,
   title,
-  onOpenCreate
+  onOpenCreate,
+  onOpenShare,
 }: {
   onMenu: () => void;
   title: string;
   onOpenCreate: () => void;
+  onOpenShare: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, isAuthenticated, signOut, setShowAuthModal, activeProject, projects, setActiveProjectId, questions } = useApp();
+  const {
+    user,
+    isAuthenticated,
+    signOut,
+    setShowAuthModal,
+    activeProject,
+    projects,
+    setActiveProjectId,
+    questions,
+    refreshActiveProject,
+  } = useApp();
   const [open, setOpen] = useState<"n" | "u" | "p" | null>(null);
   const toggle = (k: "n" | "u" | "p") => setOpen(open === k ? null : k);
 
@@ -197,6 +210,21 @@ function Header({
           <Plus className="h-3.5 w-3.5" />
           <span>New Project</span>
         </button>
+        {activeProject && (
+          <button
+            onClick={onOpenShare}
+            className="hidden sm:flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-[12px] font-medium text-primary hover:bg-primary/20 transition-colors"
+            title="Share project and invite collaborators"
+          >
+            <Users className="h-3.5 w-3.5" />
+            <span>Share / Invite</span>
+            {(activeProject.collaborator_count ?? 0) > 0 && (
+              <span className="rounded-full bg-primary/15 px-1.5 text-[10px]">
+                {activeProject.collaborator_count}
+              </span>
+            )}
+          </button>
+        )}
 
         {/* Notifications (Open Clarification Questions count) */}
         <div className="relative">
@@ -316,7 +344,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (r) => r.location.pathname });
   const [mobile, setMobile] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const { activeProject } = useApp();
+  const { user, refreshActiveProject } = useApp();
 
   if (path === "/login") return <>{children}</>;
 
@@ -344,11 +374,21 @@ export function Shell({ children }: { children: ReactNode }) {
           title={pageTitle}
           onMenu={() => setMobile(true)}
           onOpenCreate={() => setCreateOpen(true)}
+          onOpenShare={() => setShareOpen(true)}
         />
         <main className="flex-1 p-4 lg:p-5">{children}</main>
       </div>
 
       <CreateProjectModal isOpen={createOpen} onClose={() => setCreateOpen(false)} />
+      {activeProject && (
+        <ShareProjectModal
+          isOpen={shareOpen}
+          onClose={() => setShareOpen(false)}
+          project={activeProject}
+          currentUserId={user?.id}
+          onCollaboratorChanged={() => void refreshActiveProject()}
+        />
+      )}
     </div>
   );
 }
