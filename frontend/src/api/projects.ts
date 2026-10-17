@@ -312,6 +312,16 @@ export async function sendProjectInvitation(
 }
 
 /**
+ * Fetch persisted invitations sent for a project (owner-only endpoint).
+ */
+export async function getProjectInvitations(projectId: string): Promise<InvitationResponse[]> {
+  const response = await apiClient.get<InvitationResponse[]>(
+    `/projects/${projectId}/invitations`
+  );
+  return response.data || [];
+}
+
+/**
  * Fetch pending project invitations addressed to the active user's email.
  */
 export async function getUserInvitations(): Promise<InvitationResponse[]> {
@@ -326,5 +336,4 @@ export async function acceptInvitation(invitationId: string): Promise<Project> {
   const response = await apiClient.post<Project>(`/invitations/${invitationId}/accept`);
   return response.data;
 }
-
 

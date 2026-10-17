@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   getCollaborators,
+  getProjectInvitations,
   removeCollaborator,
   sendProjectInvitation,
 } from '../api/projects';
@@ -59,8 +60,12 @@ export default function ShareProjectModal({
     try {
       const data = await getCollaborators(project.id);
       setCollaborators(data);
+      const invitations = await getProjectInvitations(project.id);
+      setPendingInvites(invitations);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to load team members.');
+      setCollaborators([]);
+      setPendingInvites([]);
     } finally {
       setIsLoading(false);
     }
@@ -124,10 +129,10 @@ export default function ShareProjectModal({
     setInviteSuccessMessage(null);
 
     try {
-      const inv = await sendProjectInvitation(project.id, email, inviteRole);
+      await sendProjectInvitation(project.id, email, inviteRole);
       setInviteSuccessMessage(`Invitation dispatched to ${email}!`);
       setInviteEmail('');
-      setPendingInvites((prev) => [inv, ...prev]);
+      await fetchTeam();
       setTimeout(() => setInviteSuccessMessage(null), 4000);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to dispatch invitation.');
@@ -156,7 +161,7 @@ export default function ShareProjectModal({
             </div>
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                Share Project & Team
+                Share Project & Invite Collaborators
               </h3>
               <p className="text-xs text-slate-400 truncate max-w-[280px]">
                 {project.title}
@@ -189,7 +194,7 @@ export default function ShareProjectModal({
                 Invite Link
               </span>
               <span className="text-[11px] font-normal text-slate-400 lowercase">
-                grants editor access
+                authenticate before joining
               </span>
             </label>
             <div className="flex items-center gap-2">
@@ -225,7 +230,7 @@ export default function ShareProjectModal({
               </button>
             </div>
             <p className="text-[11px] text-slate-500">
-              Teammates opening this link will immediately join as editors to review requirements and participate in clarification interviews.
+              Recipients must authenticate before joining. Share links join with editor access. in clarification interviews.
             </p>
           </div>
 

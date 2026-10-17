@@ -153,6 +153,11 @@ def test_source_document_audit_attribution(auth_setup):
 
     # Upload document as User 2 (collaborator/uploader)
     t2 = _create_token("uploader-2", "uploader2@example.com", secret=secret)
+    join_res = client.post(
+        f"/projects/{project_id}/join",
+        headers={"Authorization": f"Bearer {t2}"},
+    )
+    assert join_res.status_code == 200
     files = {"file": ("requirements_v1.txt", b"System shall support multi-factor authentication.", "text/plain")}
     res_upload = client.post(
         f"/projects/{project_id}/sources",

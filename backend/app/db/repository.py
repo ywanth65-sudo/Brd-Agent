@@ -266,6 +266,10 @@ class ProjectRepository:
         self, project_id: str, user_id: str, user_email: str, role: str = "editor"
     ) -> dict[str, Any]:
         """Add user as collaborator to project if not already enrolled."""
+        role = role.strip().lower()
+        if role not in {"editor", "viewer"}:
+            raise ValueError("Role must be either 'editor' or 'viewer'.")
+        user_email = user_email.strip().lower()
         try:
             existing = (
                 self.client.table("project_collaborators")
@@ -387,9 +391,29 @@ class ProjectRepository:
         role: str = "editor",
     ) -> dict[str, Any]:
         """Create and store a project invitation."""
+        role = role.strip().lower()
+        if role not in {"editor", "viewer"}:
+            raise ValueError("Role must be either 'editor' or 'viewer'.")
         now = datetime.now(timezone.utc).isoformat()
         clean_invitee_email = invitee_email.strip().lower()
         token = str(uuid.uuid4())
+        clean_inviter_email = inviter_email.strip().lower()
+
+        try:
+            existing = (
+                self.client.table("project_invitations")
+                .select("*")
+                .eq("project_id", project_id)
+                .eq("invitee_email", clean_invitee_email)
+                .eq("status", "pending")
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                return existing.data[0]
+        except Exception as exc:
+            logger.error("Failed to check duplicate invitation: %s", exc)
+            raise ValueError(f"Failed to check existing invitation: {exc}") from exc
 
         # Check project title if available
         project_title = None
@@ -404,7 +428,7 @@ class ProjectRepository:
             "id": str(uuid.uuid4()),
             "project_id": project_id,
             "inviter_id": inviter_id,
-            "inviter_email": inviter_email,
+            "inviter_email": clean_inviter_email,
             "invitee_email": clean_invitee_email,
             "role": role,
             "status": "pending",
@@ -457,6 +481,21 @@ class ProjectRepository:
             logger.error("Failed to get pending invitations for '%s': %s", clean_email, exc)
             raise ValueError(f"Failed to get invitations: {exc}") from exc
 
+    def get_project_invitations(self, project_id: str) -> list[dict[str, Any]]:
+        """Retrieve persisted invitations for a project, newest first."""
+        try:
+            res = (
+                self.client.table("project_invitations")
+                .select("*")
+                .eq("project_id", project_id)
+                .order("created_at", desc=True)
+                .execute()
+            )
+            return res.data or []
+        except Exception as exc:
+            logger.error("Failed to get invitations for project '%s': %s", project_id, exc)
+            raise ValueError(f"Failed to get project invitations: {exc}") from exc
+
     def accept_invitation(
         self, invitation_id: str, user_id: str, user_email: str
     ) -> dict[str, Any]:
@@ -478,6 +517,8 @@ class ProjectRepository:
                 raise ValueError(
                     f"User email '{clean_user_email}' does not match invitation recipient '{clean_invitee_email}'."
                 )
+            if invitation.get("status", "pending").lower() != "pending":
+                raise ValueError("Invitation is no longer pending.")
 
             now = datetime.now(timezone.utc).isoformat()
             upd = (
@@ -492,7 +533,7 @@ class ProjectRepository:
 
             # Enroll user into project_collaborators
             project_id = invitation["project_id"]
-            role = invitation.get("role", "editor")
+            role = invitation.get("role", "editor").strip().lower()
             self.add_collaborator(project_id, user_id, user_email, role)
 
             return updated_inv
@@ -1658,5 +1699,3 @@ class ProjectRepository:
             is_current=bool(row.get("is_current", True)),
             status=row.get("status", "COMPLETED"),
         )
-
-

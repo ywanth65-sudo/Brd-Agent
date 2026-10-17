@@ -5,7 +5,7 @@ HTTP-level payload validation and response structuring.
 """
 
 from typing import Literal, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.assumption import Assumption
 from app.models.project import Project, ProjectStatus
@@ -286,6 +286,14 @@ class InviteCollaboratorRequest(BaseModel):
     email: str = Field(..., description="Invitee email address")
     role: Optional[str] = Field(default="editor", description="Collaborator access role")
 
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, value: Optional[str]) -> str:
+        normalized = (value or "editor").strip().lower()
+        if normalized not in {"editor", "viewer"}:
+            raise ValueError("Role must be either 'editor' or 'viewer'.")
+        return normalized
+
 
 class InvitationResponse(BaseModel):
     """Project invitation metadata record."""
@@ -300,5 +308,3 @@ class InvitationResponse(BaseModel):
     role: str = Field(default="editor", description="Collaborator role")
     status: str = Field(default="pending", description="Invitation status (pending, accepted, declined)")
     created_at: str = Field(..., description="ISO creation timestamp")
-
-

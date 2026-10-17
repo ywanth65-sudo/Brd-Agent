@@ -204,6 +204,13 @@ class InMemoryProjectRepository:
         invitee_email: str,
         role: str = "editor",
     ) -> dict[str, Any]:
+        for existing in self.project_invitations.values():
+            if (
+                existing.get("project_id") == project_id
+                and existing.get("invitee_email") == invitee_email.strip().lower()
+                and existing.get("status") == "pending"
+            ):
+                return dict(existing)
         now = datetime.now(timezone.utc).isoformat()
         clean_invitee_email = invitee_email.strip().lower()
         inv_id = str(uuid.uuid4())
@@ -228,6 +235,13 @@ class InMemoryProjectRepository:
         self.project_invitations[inv_id] = row
         return dict(row)
 
+    def get_project_invitations(self, project_id: str) -> list[dict[str, Any]]:
+        return [
+            dict(inv)
+            for inv in self.project_invitations.values()
+            if inv.get("project_id") == project_id
+        ]
+
     def get_pending_invitations_for_email(self, email: str) -> list[dict[str, Any]]:
         clean_email = email.strip().lower()
         res = []
@@ -248,6 +262,8 @@ class InMemoryProjectRepository:
         if invitation_id not in self.project_invitations:
             raise ValueError(f"Invitation with id '{invitation_id}' not found.")
         inv = self.project_invitations[invitation_id]
+        if inv.get("status") != "pending":
+            raise ValueError("Invitation is no longer pending.")
 
         clean_user_email = user_email.strip().lower()
         clean_invitee_email = inv.get("invitee_email", "").strip().lower()

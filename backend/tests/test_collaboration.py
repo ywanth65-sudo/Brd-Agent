@@ -203,6 +203,103 @@ def test_collaborators_management_and_removal(collab_setup):
     assert collabs_after[0]["user_id"] == "collab-uuid-3"
 
 
+def test_owner_invites_requested_role_and_recipient_accepts_once(collab_setup):
+    client, repo, _, secret = collab_setup
+    owner_token = _create_token("owner-invite-1", "owner@example.com", secret)
+    invitee_token = _create_token("viewer-1", "viewer@example.com", secret)
+    wrong_token = _create_token("wrong-recipient-1", "wrong@example.com", secret)
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    invitee_headers = {"Authorization": f"Bearer {invitee_token}"}
+    wrong_headers = {"Authorization": f"Bearer {wrong_token}"}
+
+    project = client.post(
+        "/projects",
+        headers=owner_headers,
+        json={"title": "Invitation Project", "idea": "Collaborator workflow."},
+    ).json()["project"]
+    project_id = project["id"]
+
+    invite = client.post(
+        f"/projects/{project_id}/invitations",
+        headers=owner_headers,
+        json={"email": "viewer@example.com", "role": "viewer"},
+    )
+    assert invite.status_code == 200
+    invitation = invite.json()
+    assert invitation["role"] == "viewer"
+
+    listed = client.get(f"/projects/{project_id}/invitations", headers=owner_headers)
+    assert listed.status_code == 200
+    assert listed.json()[0]["invitee_email"] == "viewer@example.com"
+
+    pending = client.get("/user/invitations", headers=invitee_headers)
+    assert pending.status_code == 200
+    assert pending.json()[0]["role"] == "viewer"
+
+    wrong_accept = client.post(
+        f"/invitations/{invitation['id']}/accept",
+        headers=wrong_headers,
+    )
+    assert wrong_accept.status_code == 403
+
+    accepted = client.post(
+        f"/invitations/{invitation['id']}/accept",
+        headers=invitee_headers,
+    )
+    assert accepted.status_code == 200
+    assert repo.get_collaborators(project_id)[0]["role"] == "viewer"
+
+    viewer_write = client.post(
+        f"/projects/{project_id}/sources",
+        headers=invitee_headers,
+        files={"file": ("notes.txt", b"viewer must not write", "text/plain")},
+    )
+    assert viewer_write.status_code == 403
+
+    duplicate_accept = client.post(
+        f"/invitations/{invitation['id']}/accept",
+        headers=invitee_headers,
+    )
+    assert duplicate_accept.status_code == 400
+    assert len(repo.get_collaborators(project_id)) == 1
+
+
+def test_invitation_authorization_and_validation(collab_setup):
+    client, _, _, secret = collab_setup
+    owner_token = _create_token("owner-invite-2", "owner2@example.com", secret)
+    non_owner_token = _create_token("non-owner-invite-2", "other@example.com", secret)
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    non_owner_headers = {"Authorization": f"Bearer {non_owner_token}"}
+
+    project = client.post(
+        "/projects",
+        headers=owner_headers,
+        json={"title": "Protected Invitations", "idea": "Authorization checks."},
+    ).json()["project"]
+    project_id = project["id"]
+
+    forbidden = client.post(
+        f"/projects/{project_id}/invitations",
+        headers=non_owner_headers,
+        json={"email": "person@example.com", "role": "editor"},
+    )
+    assert forbidden.status_code == 403
+
+    invalid_role = client.post(
+        f"/projects/{project_id}/invitations",
+        headers=owner_headers,
+        json={"email": "person@example.com", "role": "admin"},
+    )
+    assert invalid_role.status_code == 422
+
+    invalid_email = client.post(
+        f"/projects/{project_id}/invitations",
+        headers=owner_headers,
+        json={"email": "not-an-email", "role": "editor"},
+    )
+    assert invalid_email.status_code == 400
+
+
 def test_chat_sender_prefix_with_user_profile(collab_setup):
     """Verify chat input context prefixes the sender's full_name and role_title."""
     client, repo, mock_llm, secret = collab_setup
@@ -370,4 +467,3 @@ def test_project_invitation_lifecycle(collab_setup):
     empty_invs_res = client.get("/user/invitations", headers=invitee_headers)
     assert empty_invs_res.status_code == 200
     assert len(empty_invs_res.json()) == 0
-

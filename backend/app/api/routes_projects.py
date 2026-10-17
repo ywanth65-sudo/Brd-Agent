@@ -69,6 +69,40 @@ user_router = APIRouter(prefix="/user", tags=["user"])
 invitations_router = APIRouter(prefix="/invitations", tags=["invitations"])
 
 
+def _require_project_access(
+    repository: ProjectRepository,
+    project_id: str,
+    current_user: AuthenticatedUser,
+    *,
+    write: bool = False,
+) -> tuple[Project, str]:
+    """Return a project and effective role, enforcing owner/editor/viewer access."""
+    try:
+        project = repository.get_project(project_id)
+    except ValueError as err:
+        if "not found" in str(err).lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
+
+    if current_user.is_demo:
+        return project, "owner"
+    if project.owner_id and str(project.owner_id) == str(current_user.user_id):
+        return project, "owner"
+
+    collaborators = repository.get_collaborators(project_id)
+    membership = next(
+        (item for item in collaborators if str(item.get("user_id")) == str(current_user.user_id)),
+        None,
+    )
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this project.")
+
+    role = str(membership.get("role", "viewer")).lower()
+    if write and role != "editor":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viewer access is read-only.")
+    return project, role
+
+
 
 @user_router.get(
     "/profile",
@@ -199,13 +233,16 @@ def get_project_detail(
 ) -> ProjectDetailResponse:
     """Fetch project details accompanied by counts of requirements, open questions, assumptions, and collaborators."""
     try:
-        project = repository.get_project(project_id)
+        project, _ = _require_project_access(repository, project_id, current_user)
         requirements = repository.get_requirements(project_id)
         open_questions = repository.get_open_questions(project_id)
         assumptions = repository.get_assumptions(project_id)
         collabs = repository.get_collaborators(project_id) if hasattr(repository, "get_collaborators") else []
 
-        is_owner = (project.owner_id == current_user.user_id) if current_user and project.owner_id else True
+        is_owner = current_user.is_demo or (
+            project.owner_id is not None
+            and str(project.owner_id) == str(current_user.user_id)
+        )
         collab_count = len(collabs)
         updated_project = project.model_copy(update={"is_owner": is_owner, "collaborator_count": collab_count})
 
@@ -263,10 +300,11 @@ def join_project(
 def get_collaborators(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[CollaboratorResponse]:
     """Retrieve all collaborators enrolled in a project."""
     try:
-        repository.get_project(project_id)
+        _require_project_access(repository, project_id, current_user)
         collabs = repository.get_collaborators(project_id) if hasattr(repository, "get_collaborators") else []
         return [
             CollaboratorResponse(
@@ -304,8 +342,9 @@ def remove_collaborator(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
 
-    # Owner-only check
-    if project.owner_id and project.owner_id != current_user.user_id:
+    if not current_user.is_demo and (
+        not project.owner_id or str(project.owner_id) != str(current_user.user_id)
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the project owner can remove collaborators.",
@@ -329,7 +368,8 @@ async def upload_source(
     llm_client: LLMClient = Depends(get_llm_client),
 ) -> SourceDocumentResponse:
     """Upload and process a source document (PDF, DOCX, TXT, PNG, JPG, JPEG, WEBP), parse chunks, and persist."""
-    # 1. Guard against invalid project IDs
+    # 1. Guard against invalid project IDs and enforce editor access
+    _require_project_access(repository, project_id, current_user, write=True)
     try:
         project = repository.get_project(project_id)
     except ValueError as err:
@@ -509,10 +549,11 @@ async def upload_source(
 def get_source_documents(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> SourceDocumentListResponse:
     """Retrieve all uploaded source documents for a project along with chunk counts."""
     try:
-        repository.get_project(project_id)
+        _require_project_access(repository, project_id, current_user)
     except ValueError as err:
         if "not found" in str(err).lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
@@ -555,13 +596,11 @@ def analyze_project(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
     gemini_client: GeminiClient = Depends(get_gemini_client),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> AnalyzeResponse:
     """Transition project into ANALYZING, execute extraction and validation, and transition to next state."""
     # 1. Load project and validate state transition into ANALYZING
-    try:
-        project = repository.get_project(project_id)
-    except ValueError as err:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
+    project, _ = _require_project_access(repository, project_id, current_user, write=True)
 
     # Determine permitted event leading to ANALYZING
     if project.status == ProjectStatus.DRAFT:
@@ -673,10 +712,11 @@ def analyze_project(
 def get_requirements(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[Requirement]:
     """Retrieve all requirements currently captured for the project."""
     try:
-        repository.get_project(project_id)
+        _require_project_access(repository, project_id, current_user)
         return repository.get_requirements(project_id)
     except ValueError as err:
         if "not found" in str(err).lower():
@@ -692,10 +732,11 @@ def get_requirements(
 def get_open_questions(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[Question]:
     """Retrieve open clarification questions for a project ordered by priority descending."""
     try:
-        repository.get_project(project_id)
+        _require_project_access(repository, project_id, current_user)
         return repository.get_open_questions(project_id)
     except ValueError as err:
         if "not found" in str(err).lower():
@@ -716,6 +757,7 @@ def submit_answers(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> SubmitAnswersResponse:
     """Submit answers, increment input_revision, transition via answers_submitted, and re-run analysis."""
+    _require_project_access(repository, project_id, current_user, write=True)
     try:
         project = repository.get_project(project_id)
     except ValueError as err:
@@ -841,6 +883,7 @@ def clarification_chat(
       - Re-run validation rules. If zero blockers remain, transitions project status to READY_TO_GENERATE.
     Otherwise, answers conversationally and prompts for the next prioritized clarification gap.
     """
+    _require_project_access(repository, project_id, current_user, write=True)
     try:
         project = repository.get_project(project_id)
     except ValueError as err:
@@ -1011,12 +1054,7 @@ def get_project_chat_history(
     repository: ProjectRepository = Depends(get_repository),
 ) -> ChatHistoryResponse:
     """Retrieve full chronological chat history for a project."""
-    project = repository.get_project(project_id)
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Project with id '{project_id}' not found.",
-        )
+    _require_project_access(repository, project_id, current_user)
     raw_msgs = (
         repository.get_chat_history(project_id)
         if hasattr(repository, "get_chat_history")
@@ -1062,15 +1100,17 @@ def invite_collaborator(
             detail=f"Project with id '{project_id}' not found.",
         )
 
-    # Guard: Only project owner can invite
-    if project.owner_id and str(project.owner_id) != str(current_user.user_id):
+    # Guard: only project owners can invite
+    if not current_user.is_demo and (
+        not project.owner_id or str(project.owner_id) != str(current_user.user_id)
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the project owner can invite collaborators.",
         )
 
     clean_email = request.email.strip().lower()
-    if not clean_email or "@" not in clean_email:
+    if not clean_email or "@" not in clean_email or "." not in clean_email.rsplit("@", 1)[-1]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid email address provided for invitation.",
@@ -1081,7 +1121,7 @@ def invite_collaborator(
         inviter_id=current_user.user_id,
         inviter_email=current_user.email,
         invitee_email=clean_email,
-        role=request.role or "editor",
+        role=(request.role or "editor").strip().lower(),
     )
     return InvitationResponse(
         id=str(inv.get("id")),
@@ -1093,6 +1133,36 @@ def invite_collaborator(
         status=inv.get("status") or "pending",
         created_at=inv.get("created_at") or datetime.now(timezone.utc).isoformat(),
     )
+
+
+@router.get(
+    "/{project_id}/invitations",
+    response_model=list[InvitationResponse],
+    summary="List persisted project invitations",
+)
+def get_project_invitations(
+    project_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: ProjectRepository = Depends(get_repository),
+) -> list[InvitationResponse]:
+    """List invitations for project owners; do not fabricate client-side records."""
+    project, _ = _require_project_access(repository, project_id, current_user)
+    if not current_user.is_demo and project.owner_id != current_user.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the project owner can view invitations.")
+    raw_invs = repository.get_project_invitations(project_id)
+    return [
+        InvitationResponse(
+            id=str(inv.get("id")),
+            project_id=str(inv.get("project_id")),
+            project_title=inv.get("project_title") or project.title,
+            inviter_email=inv.get("inviter_email") or current_user.email,
+            invitee_email=inv.get("invitee_email") or "",
+            role=inv.get("role") or "editor",
+            status=inv.get("status") or "pending",
+            created_at=inv.get("created_at") or "",
+        )
+        for inv in raw_invs
+    ]
 
 
 @user_router.get(
@@ -1189,10 +1259,11 @@ def accept_project_invitation(
 def get_assumptions(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[Assumption]:
     """Retrieve all assumptions proposed or accepted for the project."""
     try:
-        repository.get_project(project_id)
+        _require_project_access(repository, project_id, current_user)
         return repository.get_assumptions(project_id)
     except ValueError as err:
         if "not found" in str(err).lower():
@@ -1213,10 +1284,7 @@ def decide_assumption(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Assumption:
     """Accept or reject an assumption, updating revision, recording reviewer audit, and triggering question on rejection."""
-    try:
-        project = repository.get_project(project_id)
-    except ValueError as err:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
+    project, _ = _require_project_access(repository, project_id, current_user, write=True)
 
     decision_str = request.decision.lower()
     new_status = (
@@ -1286,12 +1354,10 @@ def generate_brd(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
     gemini_client: GeminiClient = Depends(get_gemini_client),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> BRDGenerateResponse:
     """Compile structured BRD JSON, enforce quality checks, render DOCX, and persist version."""
-    try:
-        project = repository.get_project(project_id)
-    except ValueError as err:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
+    project, _ = _require_project_access(repository, project_id, current_user, write=True)
 
     # Guard: Generation is permitted when project status is READY_TO_GENERATE or recovering from FAILED (or already GENERATING)
     if project.status not in (ProjectStatus.READY_TO_GENERATE, ProjectStatus.FAILED, ProjectStatus.GENERATING):
@@ -1456,10 +1522,11 @@ def generate_brd(
 def get_latest_brd(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> BRDVersionResponse:
     """Retrieve the latest compiled BRD version metadata and structured JSON content."""
     try:
-        project = repository.get_project(project_id)
+        project, _ = _require_project_access(repository, project_id, current_user)
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
 
@@ -1497,7 +1564,7 @@ def download_brd_docx(
 ) -> Response:
     """Export and stream the latest BRD version formatted as a clean Microsoft Word document."""
     try:
-        project = repository.get_project(project_id)
+        project, _ = _require_project_access(repository, project_id, current_user)
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
 
@@ -1575,10 +1642,11 @@ def download_brd_docx(
 def retry_project(
     project_id: str,
     repository: ProjectRepository = Depends(get_repository),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Project:
     """Recover from FAILED status back to the stored previous valid state."""
     try:
-        project = repository.get_project(project_id)
+        project, _ = _require_project_access(repository, project_id, current_user, write=True)
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
 
