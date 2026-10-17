@@ -50,6 +50,9 @@ export default function ClarificationChatDrawer({
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const [activeQuestion, setActiveQuestion] = useState<Question | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -82,6 +85,8 @@ export default function ClarificationChatDrawer({
 
     let isMounted = true;
     setIsLoadingHistory(true);
+    setHistoryError(null);
+    setMessages([]);
 
     getChatHistory(project.id)
       .then((history) => {
@@ -142,6 +147,9 @@ export default function ClarificationChatDrawer({
       })
       .catch((err) => {
         console.error('Failed to load chat history:', err);
+        if (isMounted) {
+          setHistoryError(err?.message || 'Unable to load conversation history.');
+        }
       })
       .finally(() => {
         if (isMounted) setIsLoadingHistory(false);
@@ -150,7 +158,7 @@ export default function ClarificationChatDrawer({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, project.id]);
+  }, [isOpen, project.id, historyReloadKey]);
 
 
   // Focus textarea when opened
@@ -162,8 +170,9 @@ export default function ClarificationChatDrawer({
     }
   }, [isOpen]);
 
-  const handleClearChat = () => {
+  const handleRefreshHistory = () => {
     setMessages([]);
+    setHistoryReloadKey((value) => value + 1);
   };
 
   const handleSend = async (textToSend?: string) => {
@@ -190,6 +199,7 @@ export default function ClarificationChatDrawer({
 
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
+    setSendError(null);
     setIsSending(true);
 
     try {
@@ -213,15 +223,9 @@ export default function ClarificationChatDrawer({
         onClarificationResolved?.();
       }
     } catch (err: any) {
-      const errMsg: DisplayChatMessage = {
-        id: `err-${Date.now()}`,
-        role: 'assistant',
-        content: `Sorry, I encountered an issue: ${err.message || 'Unable to connect to assistant'}. Please try again.`,
-        senderName: 'AI Interviewer',
-        senderRole: 'System',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, errMsg]);
+      setMessages((prev) => prev.filter((message) => message.id !== userMsgId));
+      setInputValue(text);
+      setSendError(err.message || 'Unable to connect to the assistant.');
     } finally {
       setIsSending(false);
     }
@@ -291,8 +295,8 @@ export default function ClarificationChatDrawer({
 
           <div className="flex items-center gap-1">
             <button
-              onClick={handleClearChat}
-              title="Reset conversation"
+              onClick={handleRefreshHistory}
+              title="Refresh conversation"
               className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition"
             >
               <RotateCcw className="w-4 h-4" />
@@ -326,6 +330,25 @@ export default function ClarificationChatDrawer({
 
         {/* Message Thread */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {historyError && (
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-200">
+              <div>{historyError}</div>
+              <button
+                type="button"
+                onClick={() => setHistoryReloadKey((value) => value + 1)}
+                className="mt-2 font-semibold text-rose-100 underline"
+              >
+                Refresh conversation
+              </button>
+            </div>
+          )}
+
+          {!isLoadingHistory && !historyError && messages.length === 0 && (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-center text-xs text-slate-400">
+              No conversation yet. Ask about a requirement or clarify the project scope.
+            </div>
+          )}
+
           {isLoadingHistory && (
             <div className="flex items-center justify-center py-12 text-xs text-slate-400 gap-2.5">
               <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
@@ -480,6 +503,19 @@ export default function ClarificationChatDrawer({
 
         {/* Footer Input Bar */}
         <footer className="p-3 border-t border-slate-800 bg-slate-900/80 backdrop-blur-md">
+          {sendError && (
+            <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+              <span>{sendError}</span>
+              <button
+                type="button"
+                onClick={() => handleSend()}
+                disabled={isSending || !inputValue.trim()}
+                className="font-semibold underline disabled:opacity-50"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -493,7 +529,7 @@ export default function ClarificationChatDrawer({
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type your clarification or ask a question... (Enter to send)"
+                placeholder="Ask a question or clarify a requirement..."
                 rows={2}
                 disabled={isSending}
                 className="w-full resize-none rounded-xl bg-slate-900/90 border border-slate-700/80 px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 transition disabled:opacity-50"

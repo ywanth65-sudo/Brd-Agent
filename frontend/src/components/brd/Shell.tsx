@@ -3,11 +3,12 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, FileText, BrainCircuit, BadgeCheck, ListChecks, BarChart3,
   ClipboardList, Settings, HelpCircle, Bell, ChevronDown, ChevronRight, Menu, X, Hexagon, User, LogOut,
-  Plus, LogIn, Sparkles, Users
+  Plus, LogIn, Sparkles, Users, MessageCircle
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { CreateProjectModal } from "@/components/CreateProjectModal";
 import ShareProjectModal from "@/components/ShareProjectModal";
+import ClarificationChatDrawer from "@/components/ClarificationChatDrawer";
 
 const nav = [
   ["Dashboard", LayoutDashboard, "/"],
@@ -109,11 +110,13 @@ function Header({
   title,
   onOpenCreate,
   onOpenShare,
+  onOpenChat,
 }: {
   onMenu: () => void;
   title: string;
   onOpenCreate: () => void;
   onOpenShare: () => void;
+  onOpenChat: () => void;
 }) {
   const navigate = useNavigate();
   const {
@@ -223,6 +226,16 @@ function Header({
                 {activeProject.collaborator_count}
               </span>
             )}
+          </button>
+        )}
+        {activeProject && (
+          <button
+            onClick={onOpenChat}
+            className="flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-[12px] font-medium text-violet-600 hover:bg-violet-500/20 transition-colors"
+            title="Chat with AI about this project"
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Chat with AI</span>
           </button>
         )}
 
@@ -342,11 +355,18 @@ const titles: Record<string, string> = {
 
 export function Shell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (r) => r.location.pathname });
+  const navigate = useNavigate();
   const [mobile, setMobile] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const { activeProject } = useApp();
-  const { user, refreshActiveProject } = useApp();
+  const [chatOpen, setChatOpen] = useState(false);
+  const {
+    activeProject,
+    questions,
+    user,
+    refreshActiveProject,
+    refreshProjects,
+  } = useApp();
 
   if (path === "/login") return <>{children}</>;
 
@@ -375,6 +395,7 @@ export function Shell({ children }: { children: ReactNode }) {
           onMenu={() => setMobile(true)}
           onOpenCreate={() => setCreateOpen(true)}
           onOpenShare={() => setShareOpen(true)}
+          onOpenChat={() => setChatOpen(true)}
         />
         <main className="flex-1 p-4 lg:p-5">{children}</main>
       </div>
@@ -387,6 +408,22 @@ export function Shell({ children }: { children: ReactNode }) {
           project={activeProject}
           currentUserId={user?.id}
           onCollaboratorChanged={() => void refreshActiveProject()}
+        />
+      )}
+      {activeProject && (
+        <ClarificationChatDrawer
+          isOpen={chatOpen}
+          onClose={() => setChatOpen(false)}
+          project={activeProject}
+          openQuestions={questions}
+          onClarificationResolved={() => {
+            void refreshActiveProject();
+            void refreshProjects();
+          }}
+          onNavigateToGenerate={() => {
+            setChatOpen(false);
+            navigate({ to: "/reports" });
+          }}
         />
       )}
     </div>
